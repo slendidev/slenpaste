@@ -12,11 +12,14 @@
         pkgs = import nixpkgs { inherit system; };
       in
 				{
-					packages.default = pkgs.buildGoModule {
-						pname          = "slenpaste";
-						version        = "0.1.0";
-						src            = ./.;
-						goPackagePath  = "github.com/slendidev/slenpaste";
+					packages = {
+						default = pkgs.buildGoModule {
+							pname          = "slenpaste";
+							version        = "0.1.0";
+							src            = ./.;
+							goPackagePath  = "github.com/slendidev/slenpaste";
+							vendorHash     = null;
+						};
 					};
 
 					devShells.default = pkgs.mkShell {
@@ -35,6 +38,11 @@
 							type        = lib.types.str;
 							default     = "0.0.0.0:8080";
 							description = "Listen address (host:port)";
+						};
+						options.services.slenpaste.staticDir = lib.mkOption {
+							type        = lib.types.str;
+							default     = "/var/lib/slenpaste";
+							description = "Directory which contains the actual paste data";
 						};
 						options.services.slenpaste.expireDur = lib.mkOption {
 							type        = lib.types.str;

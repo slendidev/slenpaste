@@ -6,20 +6,21 @@
     flake-utils.url = "github:numtide/flake-utils";
   };
 
-  outputs = { nixpkgs, flake-utils, ... }:
-		flake-utils.lib.eachSystem flake-utils.lib.defaultSystems (system:
+  outputs = { nixpkgs, flake-utils, ... }@inputs:
+		flake-utils.lib.eachDefaultSystem (system:
       let
         pkgs = import nixpkgs { inherit system; };
       in
 				{
-					packages = {
-						default = pkgs.buildGoModule {
+					packages = rec {
+						slenpaste = pkgs.buildGoModule {
 							pname          = "slenpaste";
 							version        = "0.1.0";
 							src            = ./.;
 							goPackagePath  = "github.com/slendidev/slenpaste";
 							vendorHash     = null;
 						};
+						default = slenpaste;
 					};
 
 					devShells.default = pkgs.mkShell {
@@ -62,7 +63,7 @@
 								wants       = [ "network.target" ];
 								serviceConfig = {
 									ExecStart = ''
-										${pkgs.slenpaste}/bin/slenpaste \
+										${inputs.self.packages.${system}.slenpaste}/bin/slenpaste \
 											-domain ${config.services.slenpaste.domain} \
 											-listen ${config.services.slenpaste.listen} \
 											-expire ${config.services.slenpaste.expireDur} \

@@ -38,11 +38,16 @@ func randomID(n int) string {
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html")
 	fmt.Fprintf(w, `<html><body><pre>Welcome to slenpaste!
-Upload via curl:
-  curl -F 'file=@yourfile.txt' http://%s/
 
-Or via wget:
-  wget --method=POST --body-file=yourfile.txt http://%s/
+Upload a file:
+  curl -F 'file=@yourfile.txt' -F 'expiry=1h' http://%s/
+
+Upload from stdin (no file param, expire after 5m):
+  curl --data-binary @- http://%s/?expiry=5m < yourfile.txt
+
+Upload from stdin and expire on first view:
+  cat yourfile.txt | curl --data-binary @- "http://%s/?expiry=view"
+
 </pre>
 <form enctype="multipart/form-data" method="post">
 	<input type="file" name="file">
@@ -58,7 +63,7 @@ Or via wget:
 
 	<input type="submit" value="Upload">
 </form>
-</body></html>`, domain, domain)
+</body></html>`, domain, domain, domain)
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {
@@ -68,10 +73,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var reader io.Reader
-	if err := r.ParseMultipartForm(10 << 20); err == nil {
-		if file, _, err := r.FormFile("file"); err == nil {
-			defer file.Close()
-			reader = file
+
+	contentType := r.Header.Get("Content-Type")
+	if strings.HasPrefix(contentType, "multipart/form-data") {
+		if err := r.ParseMultipartForm(10 << 20); err == nil {
+			if file, _, err := r.FormFile("file"); err == nil {
+				defer file.Close()
+				reader = file
+			}
 		}
 	}
 	if reader == nil {
@@ -79,7 +88,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		defer r.Body.Close()
 	}
 
-	expVal := r.FormValue("expiry")
+	expVal := r.URL.Query().Get("expiry")
 	var dur time.Duration
 	var onView bool
 	switch expVal {
@@ -103,8 +112,14 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer out.Close()
-	if _, err := io.Copy(out, reader); err != nil {
+	n, err := io.Copy(out, reader)
+	if err != nil {
 		http.Error(w, "Write error", http.StatusInternalServerError)
+		return
+	}
+	if n == 0 {
+		os.Remove(path)
+		http.Error(w, "Empty upload", http.StatusBadRequest)
 		return
 	}
 
@@ -157,7 +172,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	flag.StringVar(&domain, "domain", "localhost", "domain name for URLs")
+	flag.StringVar(&domain, "domain", "localhost:8080", "domain name for URLs")
 	flag.StringVar(&listenAddr, "listen", "0.0.0.0:8080", "listen address")
 	flag.StringVar(&staticDir, "static", "static", "directory to save pastes")
 	flag.DurationVar(&expireDur, "expire", 0, "time after which paste expires (e.g. 5m, 1h)")

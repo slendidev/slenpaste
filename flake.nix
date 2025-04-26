@@ -64,10 +64,10 @@
 								serviceConfig = {
 									ExecStart = ''
 										${inputs.self.packages.${system}.slenpaste}/bin/slenpaste \
-											-domain ${config.services.slenpaste.domain} \
-											-listen ${config.services.slenpaste.listen} \
-											-expire ${config.services.slenpaste.expireDur} \
-											-expire-on-view=${toString config.services.slenpaste.expireOnView}
+											-domain "${config.services.slenpaste.domain}" \
+											-listen "${config.services.slenpaste.listen}" \
+											-expire "${config.services.slenpaste.expireDur}" \
+											${lib.optionalString config.services.slenpaste.expireOnView "-expire-on-view=false"}
 									'';
 									Restart   = "on-failure";
 								};

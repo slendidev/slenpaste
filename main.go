@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"math/rand"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -75,7 +76,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	var reader io.Reader
 	var ext    string
 
-	// handle multipart file upload
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
 		if err := r.ParseMultipartForm(10 << 20); err == nil {
@@ -87,29 +87,24 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// fallback to body upload
 	if reader == nil {
 		reader = r.Body
 		defer r.Body.Close()
 	}
 
-	// default extension
 	if ext == "" {
 		ext = ".txt"
 	}
 
-	// generate ID and filename
 	id       := randomID(6)
 	filename := id + ext
 
-	// ensure storage dir
 	if err := os.MkdirAll(staticDir, 0755); err != nil {
 		http.Error(w, "Server error", http.StatusInternalServerError)
 		return
 	}
 	path := filepath.Join(staticDir, filename)
 
-	// save file
 	out, err := os.Create(path)
 	if err != nil {
 		http.Error(w, "Save error", http.StatusInternalServerError)
@@ -128,7 +123,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// write metadata if needed
 	expVal := r.URL.Query().Get("expiry")
 	var m meta
 	switch expVal {
@@ -146,7 +140,6 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		_ = os.WriteFile(path+".json", metaBytes, 0644)
 	}
 
-	// respond with URL including extension
 	fmt.Fprintf(w, "http://%s/%s\n", domain, filename)
 }
 
@@ -159,7 +152,6 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	path     := filepath.Join(staticDir, id)
 	metaPath := path + ".json"
 
-	// load and enforce metadata
 	if data, err := os.ReadFile(metaPath); err == nil {
 		var m meta
 		if err := json.Unmarshal(data, &m); err == nil {
@@ -182,7 +174,15 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer f.Close()
-	w.Header().Set("Content-Type", "text/plain")
+
+	// set correct content type based on extension
+	ext := filepath.Ext(id)
+	mimeType := mime.TypeByExtension(ext)
+	if mimeType == "" {
+		mimeType = "application/octet-stream"
+	}
+	w.Header().Set("Content-Type", mimeType)
+
 	io.Copy(w, f)
 }
 

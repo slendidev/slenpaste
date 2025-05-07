@@ -15,10 +15,10 @@
 					packages = rec {
 						slenpaste = pkgs.buildGoModule {
 							pname          = "slenpaste";
-							version        = "0.1.2";
+							version        = "0.1.3";
 							src            = ./.;
 							goPackagePath  = "github.com/slendidev/slenpaste";
-							vendorHash     = null;
+							vendorHash     = "sha256-MUvodL6K71SCfxu51T/Ka2/w32Kz+IXem1bYqXQLSaU=";
 						};
 						default = slenpaste;
 					};
@@ -55,6 +55,11 @@
 							default     = false;
 							description = "Whether to expire on first view";
 						};
+						options.services.slenpaste.https = lib.mkOption {
+							type        = lib.types.bool;
+							default     = false;
+							description = "Whether to use https:// in generated URLs";
+						};
 
 						config = lib.mkIf config.services.slenpaste.enable {
 							systemd.services.slenpaste = {
@@ -68,6 +73,7 @@
 											-listen "${config.services.slenpaste.listen}" \
 											-expire "${config.services.slenpaste.expireDur}" \
 											${lib.optionalString config.services.slenpaste.expireOnView "-expire-on-view=false"}
+											${lib.optionalString config.services.slenpaste.https "-https"}
 									'';
 									Restart   = "on-failure";
 								};

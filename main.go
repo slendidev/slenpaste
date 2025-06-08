@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
+	"golang.org/x/time/rate"
 	"io"
 	"math/rand"
 	"mime"
@@ -11,9 +12,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 	"sync"
-	"golang.org/x/time/rate"
+	"time"
 )
 
 var (
@@ -22,9 +22,9 @@ var (
 	staticDir    string
 	expireDur    time.Duration
 	expireOnView bool
-	limiters = make(map[string]*rate.Limiter)
-	limMu    sync.Mutex
-	useHTTPS bool
+	limiters     = make(map[string]*rate.Limiter)
+	limMu        sync.Mutex
+	useHTTPS     bool
 )
 
 type meta struct {
@@ -37,7 +37,7 @@ func getLimiter(ip string) *rate.Limiter {
 	defer limMu.Unlock()
 	lim, ok := limiters[ip]
 	if !ok {
-		lim = rate.NewLimiter(1, 5) // 1 req/sec, burst of 5
+		lim = rate.NewLimiter(rate.Every(5*time.Second), 1)
 		limiters[ip] = lim
 	}
 	return lim
@@ -105,7 +105,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var reader io.Reader
-	var ext    string
+	var ext string
 
 	contentType := r.Header.Get("Content-Type")
 	if strings.HasPrefix(contentType, "multipart/form-data") {
@@ -127,7 +127,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		ext = ".txt"
 	}
 
-	id       := randomID(6)
+	id := randomID(6)
 	filename := id + ext
 
 	if err := os.MkdirAll(staticDir, 0755); err != nil {
@@ -184,7 +184,7 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		indexHandler(w, r)
 		return
 	}
-	path     := filepath.Join(staticDir, id)
+	path := filepath.Join(staticDir, id)
 	metaPath := path + ".json"
 
 	if data, err := os.ReadFile(metaPath); err == nil {
@@ -222,11 +222,11 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func main() {
-	flag.StringVar(&domain,     "domain",         "localhost:8080", "domain name for URLs")
-	flag.StringVar(&listenAddr, "listen",         "0.0.0.0:8080",  "listen address")
-	flag.StringVar(&staticDir,  "static",         "static",        "directory to save pastes")
-	flag.DurationVar(&expireDur, "expire",         0,                "time after which paste expires (e.g. 5m, 1h)")
-	flag.BoolVar(&expireOnView, "expire-on-view", false,            "delete paste after it's viewed once")
+	flag.StringVar(&domain, "domain", "localhost:8080", "domain name for URLs")
+	flag.StringVar(&listenAddr, "listen", "0.0.0.0:8080", "listen address")
+	flag.StringVar(&staticDir, "static", "static", "directory to save pastes")
+	flag.DurationVar(&expireDur, "expire", 0, "time after which paste expires (e.g. 5m, 1h)")
+	flag.BoolVar(&expireOnView, "expire-on-view", false, "delete paste after it's viewed once")
 	flag.BoolVar(&useHTTPS, "https", false, "use https:// in generated URLs")
 	flag.Parse()
 

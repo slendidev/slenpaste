@@ -84,8 +84,9 @@
                     											-domain "${config.services.slenpaste.domain}" \
                     											-listen "${config.services.slenpaste.listen}" \
                     											-expire "${config.services.slenpaste.expireDur}" \
-                    											${lib.optionalString config.services.slenpaste.expireOnView "-expire-on-view=false"}
-                    											${lib.optionalString config.services.slenpaste.https "-https"}
+                    											${lib.optionalString config.services.slenpaste.expireOnView "-expire-on-view=false"} \
+                    											${lib.optionalString config.services.slenpaste.https "-https"} \
+
                     									'';
                   Restart = "on-failure";
                 };

@@ -69,16 +69,21 @@ func randomID(n int) string {
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
 	w.Header().Add("Content-Type", "text/html")
+	scheme := "http"
+	if useHTTPS {
+		scheme = "https"
+	}
+	d := fmt.Sprintf("%s://%s", scheme, domain)
 	fmt.Fprintf(w, `<html><body><pre>Welcome to slenpaste!
 
 Upload a file:
-  curl -F 'file=@yourfile.txt' -F 'expiry=1h' http://%s/
+  curl -F 'file=@yourfile.txt' -F 'expiry=1h' %s/
 
 Upload from stdin (no file param, expire after 5m):
-  curl --data-binary @- http://%s/?expiry=5m < yourfile.txt
+  curl --data-binary @- %s/?expiry=5m < yourfile.txt
 
 Upload from stdin and expire on first view:
-  cat yourfile.txt | curl --data-binary @- "http://%s/?expiry=view"
+  cat yourfile.txt | curl --data-binary @- "%s/?expiry=view"
 
 </pre>
 <form enctype="multipart/form-data" method="post">
@@ -95,7 +100,7 @@ Upload from stdin and expire on first view:
 
 	<input type="submit" value="Upload">
 </form>
-</body></html>`, domain, domain, domain)
+</body></html>`, d, d, d)
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {

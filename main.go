@@ -235,13 +235,13 @@ func main() {
 	flag.BoolVar(&useHTTPS, "https", false, "use https:// in generated URLs")
 	flag.Parse()
 
-	http.HandleFunc("/", rateLimitMiddleware(func(w http.ResponseWriter, r *http.Request) {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
-			uploadHandler(w, r)
+			rateLimitMiddleware(uploadHandler)(w, r)
 		} else {
 			viewHandler(w, r)
 		}
-	}))
+	})
 
 	fmt.Printf("slenpaste running at http://%s, storing in %s\n", listenAddr, staticDir)
 	http.ListenAndServe(listenAddr, nil)

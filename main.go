@@ -74,7 +74,33 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		scheme = "https"
 	}
 	d := fmt.Sprintf("%s://%s", scheme, domain)
-	fmt.Fprintf(w, `<html><body><pre>Welcome to slenpaste!
+
+	fmt.Fprintf(w, `<!DOCTYPE html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>slenpaste</title>
+	<style>
+		body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
+		pre { background: #f6f6f6; padding: .75rem 1rem; border-radius: .5rem; overflow: auto; }
+		fieldset { border: 1px solid #ddd; border-radius: .5rem; padding: .5rem .75rem; }
+		#dropzone {
+			border: 2px dashed #bbb; border-radius: .75rem; padding: 1.25rem; text-align: center;
+			user-select: none;
+		}
+		#dropzone.dragover { border-color: #333; background: #fafafa; }
+		#result { margin-top: .75rem; }
+		#result a { font-weight: 600; }
+		.controls { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; }
+		.inline { display: inline-flex; gap: .5rem; align-items: center; }
+		textarea { width: 100%%; height: 180px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+		.small { color: #666; font-size: .9rem; }
+	</style>
+</head>
+<body>
+	<h1>slenpaste</h1>
+	<pre>Welcome!
 
 Upload a file:
   curl -F 'file=@yourfile.txt' -F 'expiry=1h' %s/
@@ -84,23 +110,187 @@ Upload from stdin (no file param, expire after 5m):
 
 Upload from stdin and expire on first view:
   cat yourfile.txt | curl --data-binary @- "%s/?expiry=view"
-
 </pre>
-<form enctype="multipart/form-data" method="post">
-	<input type="file" name="file">
 
-	<fieldset style="margin-top: 1rem">
-		<legend>Expiry:</legend>
-		<label><input type="radio" name="expiry" value="0" checked> Never</label>
-		<label><input type="radio" name="expiry" value="5m"> 5 minutes</label>
-		<label><input type="radio" name="expiry" value="1h"> 1 hour</label>
-		<label><input type="radio" name="expiry" value="24h"> 1 day</label>
-		<label><input type="radio" name="expiry" value="view"> Expire on first view</label>
-	</fieldset><br/>
+	<form id="form" enctype="multipart/form-data" method="post">
+		<input type="file" name="file" id="fileInput">
 
-	<input type="submit" value="Upload">
-</form>
-</body></html>`, d, d, d)
+		<div class="controls" style="margin-top: .75rem">
+			<fieldset>
+				<legend>Expiry</legend>
+				<label><input type="radio" name="expiry" value="0" checked> Never</label>
+				<label><input type="radio" name="expiry" value="5m"> 5 minutes</label>
+				<label><input type="radio" name="expiry" value="1h"> 1 hour</label>
+				<label><input type="radio" name="expiry" value="24h"> 1 day</label>
+				<label><input type="radio" name="expiry" value="view"> Expire on first view</label>
+			</fieldset>
+
+			<div class="inline">
+				<label for="fname">Filename (optional):</label>
+				<input type="text" id="fname" placeholder="example.txt">
+			</div>
+
+			<input type="submit" value="Upload (fallback)">
+		</div>
+	</form>
+
+	<h2 style="margin-top:1.5rem">Quick text</h2>
+	<p class="small">Type or paste text and upload as a .txt (no file chooser needed).</p>
+	<textarea id="textArea" placeholder="Type or paste here..."></textarea>
+	<div class="controls" style="margin-top:.5rem">
+		<button id="uploadTextBtn" type="button">Upload text</button>
+		<label class="inline small"><input type="checkbox" id="textAsMd"> Save as .md</label>
+	</div>
+
+	<h2 style="margin-top:1.5rem">Paste or drop images</h2>
+	<div id="dropzone" tabindex="0">
+		Paste an image (Ctrl/Cmd+V) or drag &amp; drop files here
+		<div class="small">Images are uploaded as files. Other files dropped here work too.</div>
+	</div>
+
+	<div id="result"></div>
+
+	<script>
+	(function() {
+		"use strict";
+
+		const form = document.getElementById("form");
+		const fileInput = document.getElementById("fileInput");
+		const fname = document.getElementById("fname");
+		const textArea = document.getElementById("textArea");
+		const uploadTextBtn = document.getElementById("uploadTextBtn");
+		const textAsMd = document.getElementById("textAsMd");
+		const dropzone = document.getElementById("dropzone");
+		const result = document.getElementById("result");
+
+		function getExpiry() {
+			const checked = form.querySelector('input[name="expiry"]:checked');
+			return checked ? checked.value : "0";
+		}
+
+		function setBusy(b) {
+			if (b) {
+				result.textContent = "Uploading...";
+			}
+		}
+
+		function showLink(url) {
+			result.innerHTML = 'URL: <a href="' + url + '" target="_blank" rel="noopener">' + url + '</a>';
+			try {
+				navigator.clipboard.writeText(url);
+				result.innerHTML += ' <span class="small">(copied)</span>';
+			} catch(e) {}
+		}
+
+		async function uploadFormData(fd, expiry) {
+			setBusy(true);
+			const res = await fetch("/?expiry=" + encodeURIComponent(expiry), {
+				method: "POST",
+				body: fd
+			});
+			if (!res.ok) {
+				const t = await res.text();
+				result.textContent = "Error: " + t;
+				return;
+			}
+			const url = (await res.text()).trim();
+			showLink(url);
+		}
+
+		async function uploadBlobAsFile(blob, filename, expiry) {
+			const fd = new FormData();
+			const file = new File([blob], filename, { type: blob.type || "application/octet-stream" });
+			fd.append("file", file);
+			return uploadFormData(fd, expiry);
+		}
+
+		// Enhance file input submit (without relying on default form submit)
+		form.addEventListener("submit", async (e) => {
+			// Use JS path when possible; the default submit still works if JS fails.
+			e.preventDefault();
+			if (!fileInput.files || fileInput.files.length === 0) {
+				result.textContent = "Choose a file first.";
+				return;
+			}
+			const expiry = getExpiry();
+
+			// If user provided a filename, recreate the File with that name.
+			let file = fileInput.files[0];
+			if (fname.value.trim()) {
+				file = new File([file], fname.value.trim(), { type: file.type });
+			}
+
+			const fd = new FormData();
+			fd.append("file", file);
+			await uploadFormData(fd, expiry);
+			fileInput.value = "";
+			fname.value = "";
+		});
+
+		// Upload text as a .txt (or .md)
+		uploadTextBtn.addEventListener("click", async () => {
+			const text = textArea.value;
+			if (!text) {
+				result.textContent = "Nothing to upload.";
+				return;
+			}
+			const expiry = getExpiry();
+			const name = (fname.value.trim() || (textAsMd.checked ? "text.md" : "text.txt"));
+			await uploadBlobAsFile(new Blob([text], { type: "text/plain" }), name, expiry);
+			// clear only the filename; keep text in case they want to tweak
+			fname.value = "";
+		});
+
+		// Drag & drop support
+		;["dragenter","dragover"].forEach(ev => {
+			dropzone.addEventListener(ev, (e) => {
+				e.preventDefault(); e.stopPropagation();
+				dropzone.classList.add("dragover");
+			});
+		});
+		;["dragleave","drop"].forEach(ev => {
+			dropzone.addEventListener(ev, (e) => {
+				e.preventDefault(); e.stopPropagation();
+				dropzone.classList.remove("dragover");
+			});
+		});
+		dropzone.addEventListener("drop", async (e) => {
+			const expiry = getExpiry();
+			const files = Array.from(e.dataTransfer.files || []);
+			if (files.length === 0) return;
+			const fd = new FormData();
+			// support multi-file; server will handle each request, so send one by one for URLs
+			for (const f of files) {
+				fd.set("file", f);
+				await uploadFormData(fd, expiry);
+			}
+		});
+
+		// Paste image (or any file) support
+		window.addEventListener("paste", async (e) => {
+			const items = e.clipboardData && e.clipboardData.items ? Array.from(e.clipboardData.items) : [];
+			if (!items.length) return;
+			const expiry = getExpiry();
+			let handled = false;
+			for (const it of items) {
+				if (it.kind === "file") {
+					const blob = it.getAsFile();
+					if (!blob) continue;
+					const ext = (blob.type && blob.type.startsWith("image/")) ? blob.type.split("/")[1] : "bin";
+					const name = fname.value.trim() || ("pasted." + ext);
+					await uploadBlobAsFile(blob, name, expiry);
+					handled = true;
+				} else if (it.kind === "string") {
+					// If user copies text, allow quick text upload via paste when textarea is focused
+					// We'll let browser put text into the textarea naturally; no upload here.
+				}
+			}
+			if (handled) e.preventDefault();
+		});
+	})();
+	</script>
+</body>
+</html>`, d, d, d)
 }
 
 func uploadHandler(w http.ResponseWriter, r *http.Request) {

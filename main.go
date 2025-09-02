@@ -1,6 +1,7 @@
 package main
 
 import (
+	"embed"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -27,9 +28,17 @@ var (
 	useHTTPS     bool
 )
 
+//go:embed android-chrome-192x192.png android-chrome-512x512.png apple-touch-icon.png favicon-16x16.png favicon-32x32.png favicon.ico site.webmanifest
+var assetsFS embed.FS
+
 type meta struct {
 	Expiry       time.Time `json:"expiry"`
 	ExpireOnView bool      `json:"expire_on_view"`
+}
+
+func init() {
+	// Ensure correct types for webmanifest on some systems
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
 }
 
 func getLimiter(ip string) *rate.Limiter {
@@ -68,7 +77,7 @@ func randomID(n int) string {
 }
 
 func indexHandler(w http.ResponseWriter, r *http.Request) {
-	w.Header().Add("Content-Type", "text/html")
+	w.Header().Add("Content-Type", "text/html; charset=utf-8")
 	scheme := "http"
 	if useHTTPS {
 		scheme = "https"
@@ -80,7 +89,17 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+
 	<title>slenpaste</title>
+
+	<!-- Icons / PWA -->
+	<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+	<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png">
+	<link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png">
+	<link rel="icon" href="/favicon.ico">
+	<link rel="manifest" href="/site.webmanifest">
+	<meta name="theme-color" content="#ffffff">
+
 	<style>
 		body { font-family: system-ui, sans-serif; max-width: 800px; margin: 2rem auto; padding: 0 1rem; }
 		pre { background: #f6f6f6; padding: .75rem 1rem; border-radius: .5rem; overflow: auto; }
@@ -344,7 +363,7 @@ func uploadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if n == 0 {
-		os.Remove(path)
+		_ = os.Remove(path)
 		http.Error(w, "Empty upload", http.StatusBadRequest)
 		return
 	}
@@ -386,8 +405,8 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 		var m meta
 		if err := json.Unmarshal(data, &m); err == nil {
 			if !m.Expiry.IsZero() && time.Now().After(m.Expiry) {
-				os.Remove(path)
-				os.Remove(metaPath)
+				_ = os.Remove(path)
+				_ = os.Remove(metaPath)
 				http.NotFound(w, r)
 				return
 			}
@@ -405,7 +424,6 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	defer f.Close()
 
-	// set correct content type based on extension
 	ext := filepath.Ext(id)
 	mimeType := mime.TypeByExtension(ext)
 	if mimeType == "" {
@@ -413,7 +431,26 @@ func viewHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", mimeType)
 
-	io.Copy(w, f)
+	_, _ = io.Copy(w, f)
+}
+
+func serveEmbedded(embeddedName, contentType string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		b, err := assetsFS.ReadFile(embeddedName)
+		if err != nil {
+			http.NotFound(w, r)
+			return
+		}
+		if contentType == "" {
+			if ct := mime.TypeByExtension(filepath.Ext(embeddedName)); ct != "" {
+				contentType = ct
+			}
+		}
+		if contentType != "" {
+			w.Header().Set("Content-Type", contentType)
+		}
+		http.ServeContent(w, r, embeddedName, time.Time{}, strings.NewReader(string(b)))
+	}
 }
 
 func main() {
@@ -425,6 +462,7 @@ func main() {
 	flag.BoolVar(&useHTTPS, "https", false, "use https:// in generated URLs")
 	flag.Parse()
 
+	// Uploads + index
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodPost {
 			rateLimitMiddleware(uploadHandler)(w, r)
@@ -433,6 +471,15 @@ func main() {
 		}
 	})
 
+	// Embedded favicon/PWA assets
+	http.HandleFunc("/favicon.ico", serveEmbedded("favicon.ico", "image/x-icon"))
+	http.HandleFunc("/apple-touch-icon.png", serveEmbedded("apple-touch-icon.png", "image/png"))
+	http.HandleFunc("/favicon-16x16.png", serveEmbedded("favicon-16x16.png", "image/png"))
+	http.HandleFunc("/favicon-32x32.png", serveEmbedded("favicon-32x32.png", "image/png"))
+	http.HandleFunc("/android-chrome-192x192.png", serveEmbedded("android-chrome-192x192.png", "image/png"))
+	http.HandleFunc("/android-chrome-512x512.png", serveEmbedded("android-chrome-512x512.png", "image/png"))
+	http.HandleFunc("/site.webmanifest", serveEmbedded("site.webmanifest", "application/manifest+json"))
+
 	fmt.Printf("slenpaste running at http://%s, storing in %s\n", listenAddr, staticDir)
-	http.ListenAndServe(listenAddr, nil)
+	_ = http.ListenAndServe(listenAddr, nil)
 }

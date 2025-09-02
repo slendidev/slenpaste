@@ -17,7 +17,7 @@
         packages = rec {
           slenpaste = pkgs.buildGoModule {
             pname = "slenpaste";
-            version = "0.2.0";
+            version = "0.2.1";
             src = ./.;
             goPackagePath = "github.com/slendidev/slenpaste";
             vendorHash = "sha256-MUvodL6K71SCfxu51T/Ka2/w32Kz+IXem1bYqXQLSaU=";

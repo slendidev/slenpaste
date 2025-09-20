@@ -131,7 +131,9 @@ Upload from stdin and expire on first view:
   cat yourfile.txt | curl --data-binary @- "%s/?expiry=view"
 </pre>
 
-	<form id="form" enctype="multipart/form-data" method="post">
+	<a href="https://git.slendi.dev/Slendi/slenpaste.koplugin">Download the new KOReader plugin!</a>
+
+	<form id="form" enctype="multipart/form-data" method="post" style="margin-top: 13px;">
 		<input type="file" name="file" id="fileInput">
 
 		<div class="controls" style="margin-top: .75rem">
